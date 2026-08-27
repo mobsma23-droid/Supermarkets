@@ -1,0 +1,6 @@
+{
+  "name": "Supermarkets",
+  "description": "Catalogue manager for Dreamprice and Intermart with Google Drive XLSX/CSV download, auto-detection, products, cart, profits, and import.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
