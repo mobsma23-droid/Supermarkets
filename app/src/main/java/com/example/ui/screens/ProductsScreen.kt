@@ -79,16 +79,35 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
+import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.filled.CloudSync
+import androidx.compose.material.icons.filled.FilterList
+import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material.icons.filled.NotificationsActive
+import androidx.compose.material.icons.filled.Sort
+import androidx.compose.material.icons.filled.TrendingDown
+import androidx.compose.material.icons.filled.Whatshot
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import com.example.data.ProductEntity
 import com.example.ui.CatalogViewModel
+import com.example.ui.ProductSortOption
 import com.example.ui.components.BarcodeScannerDialog
 import com.example.ui.components.CloudSyncStatusCard
+import com.example.ui.components.PriceAlertsDialog
+import com.example.ui.components.SmartShoppingListDialog
 import com.example.ui.components.VoiceSemanticSearchModal
 import com.example.ui.components.WishlistDialog
 import com.example.ui.theme.BluePrimary
 import com.example.ui.theme.DreampriceColor
 import com.example.ui.theme.EmeraldSuccess
 import com.example.ui.theme.IntermartColor
+import com.example.ui.theme.SuperUColor
+import com.example.ui.theme.WinnersColor
 
 @Composable
 fun ProductsScreen(viewModel: CatalogViewModel) {
@@ -104,8 +123,12 @@ fun ProductsScreen(viewModel: CatalogViewModel) {
     val comparedIds by viewModel.comparedProductIds.collectAsState()
     val wishlistItems by viewModel.wishlistItems.collectAsState()
     val wishlistedIds by viewModel.wishlistedProductIds.collectAsState()
+    val priceAlerts by viewModel.priceAlerts.collectAsState()
+    val triggeredAlerts by viewModel.triggeredPriceAlerts.collectAsState()
     val layoutDensity by viewModel.layoutDensity.collectAsState()
     val semanticResult by viewModel.semanticSearchResult.collectAsState()
+    val productSortOption by viewModel.productSortOption.collectAsState()
+    val onlyPromotionsFilter by viewModel.onlyPromotionsFilter.collectAsState()
 
     val categories = remember(allProducts) {
         val cats = allProducts
@@ -115,11 +138,16 @@ fun ProductsScreen(viewModel: CatalogViewModel) {
         listOf("Tous") + cats
     }
 
+    var showSortDropdown by remember { mutableStateOf(false) }
     var showAddDialog by remember { mutableStateOf(false) }
     var showVoiceSearchModal by remember { mutableStateOf(false) }
     var showBarcodeScannerModal by remember { mutableStateOf(false) }
     var showWishlistModal by remember { mutableStateOf(false) }
+    var showSmartShoppingListModal by remember { mutableStateOf(false) }
+    var showSyncDashboardModal by remember { mutableStateOf(false) }
+    var showPriceAlertsModal by remember { mutableStateOf(false) }
     var editingProduct by remember { mutableStateOf<ProductEntity?>(null) }
+    var isAlertBannerDismissed by remember { mutableStateOf(false) }
 
     Box(
         modifier = Modifier
@@ -127,20 +155,57 @@ fun ProductsScreen(viewModel: CatalogViewModel) {
             .background(MaterialTheme.colorScheme.background)
     ) {
         Column(modifier = Modifier.fillMaxSize()) {
-            // Header Title
-            Column(modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 4.dp)) {
-                Text(
-                    text = "Produits",
-                    fontSize = 24.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onBackground
-                )
-                Spacer(modifier = Modifier.height(2.dp))
-                Text(
-                    text = "Comparez les prix entre supermarchés",
-                    fontSize = 13.sp,
-                    color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f)
-                )
+            // Header Title / QuicKart Greeting
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(start = 16.dp, end = 16.dp, top = 14.dp, bottom = 4.dp),
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f)
+                ),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.15f))
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(14.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Surface(
+                        shape = CircleShape,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(42.dp)
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                imageVector = Icons.Default.Storefront,
+                                contentDescription = "QuicKart",
+                                tint = Color.White,
+                                modifier = Modifier.size(22.dp)
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.width(12.dp))
+
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Welcome to QuicKart\nYour Supermarket Items and Price Comparison",
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            lineHeight = 18.sp
+                        )
+                        Spacer(modifier = Modifier.height(3.dp))
+                        Text(
+                            text = "Compare catalog prices, track promotions, and save on your groceries.",
+                            fontSize = 11.sp,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                            lineHeight = 15.sp
+                        )
+                    }
+                }
             }
 
             // Search and Filter Bar
@@ -195,6 +260,39 @@ fun ProductsScreen(viewModel: CatalogViewModel) {
                                             Box(contentAlignment = Alignment.Center) {
                                                 Text(
                                                     text = "${wishlistItems.size}",
+                                                    color = Color.White,
+                                                    fontSize = 8.sp,
+                                                    fontWeight = FontWeight.Bold
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            IconButton(
+                                onClick = { showPriceAlertsModal = true },
+                                modifier = Modifier
+                                    .size(36.dp)
+                                    .testTag("price_alerts_header_button")
+                            ) {
+                                Box(contentAlignment = Alignment.Center) {
+                                    Icon(
+                                        imageVector = if (priceAlerts.isNotEmpty()) Icons.Default.NotificationsActive else Icons.Default.Notifications,
+                                        contentDescription = "Alertes Baisse de Prix (Firestore)",
+                                        tint = if (triggeredAlerts.isNotEmpty()) EmeraldSuccess else if (priceAlerts.isNotEmpty()) Color(0xFFEA580C) else BluePrimary,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                    if (priceAlerts.isNotEmpty()) {
+                                        Surface(
+                                            shape = CircleShape,
+                                            color = if (triggeredAlerts.isNotEmpty()) EmeraldSuccess else Color(0xFFEA580C),
+                                            modifier = Modifier
+                                                .size(14.dp)
+                                                .align(Alignment.TopEnd)
+                                        ) {
+                                            Box(contentAlignment = Alignment.Center) {
+                                                Text(
+                                                    text = if (triggeredAlerts.isNotEmpty()) "!" else "${priceAlerts.size}",
                                                     color = Color.White,
                                                     fontSize = 8.sp,
                                                     fontWeight = FontWeight.Bold
@@ -307,6 +405,297 @@ fun ProductsScreen(viewModel: CatalogViewModel) {
                                     )
                                 }
                             }
+                        }
+                    }
+                }
+
+                // Active Triggered Price Drops Banner (Firestore Price Alert System)
+                AnimatedVisibility(visible = triggeredAlerts.isNotEmpty() && !isAlertBannerDismissed) {
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        color = EmeraldSuccess.copy(alpha = 0.12f),
+                        border = BorderStroke(1.dp, EmeraldSuccess.copy(alpha = 0.4f)),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 8.dp)
+                            .clickable { showPriceAlertsModal = true }
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 12.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Row(
+                                modifier = Modifier.weight(1f),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Surface(
+                                    shape = CircleShape,
+                                    color = EmeraldSuccess,
+                                    modifier = Modifier.size(26.dp)
+                                ) {
+                                    Box(contentAlignment = Alignment.Center) {
+                                        Icon(
+                                            imageVector = Icons.Default.TrendingDown,
+                                            contentDescription = null,
+                                            tint = Color.White,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                    }
+                                }
+                                Spacer(modifier = Modifier.width(10.dp))
+                                Column {
+                                    Text(
+                                        text = "🚨 Baisse de prix détectée (${triggeredAlerts.size} article${if (triggeredAlerts.size > 1) "s" else ""}) !",
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = EmeraldSuccess
+                                    )
+                                    Text(
+                                        text = "Des produits surveillés sont passés sous votre seuil. Appuyez pour voir.",
+                                        fontSize = 11.sp,
+                                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f)
+                                    )
+                                }
+                            }
+
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                TextButton(
+                                    onClick = { showPriceAlertsModal = true },
+                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+                                ) {
+                                    Text(
+                                        text = "Voir",
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.ExtraBold,
+                                        color = EmeraldSuccess
+                                    )
+                                }
+
+                                IconButton(
+                                    onClick = { isAlertBannerDismissed = true },
+                                    modifier = Modifier.size(24.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Close,
+                                        contentDescription = "Masquer le bandeau",
+                                        tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                // Supermarket Brand Filter Chips
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(
+                        text = "Enseignes & Magasins :",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                    )
+
+                    if (activeCatalog != "TOUS" || selectedCategory != "Tous" || onlyPromotionsFilter || productSortOption != ProductSortOption.DEFAULT) {
+                        Text(
+                            text = "Réinitialiser",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = BluePrimary,
+                            modifier = Modifier.clickable { viewModel.clearAllSearchFilters() }
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(4.dp))
+
+                LazyRow(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    contentPadding = PaddingValues(vertical = 2.dp)
+                ) {
+                    val supermarketOptions = listOf(
+                        "TOUS" to ("Tous les magasins" to BluePrimary),
+                        "DREAMPRICE" to ("Dreamprice" to DreampriceColor),
+                        "SUPER_U" to ("Super U" to SuperUColor),
+                        "WINNERS" to ("Winners" to WinnersColor),
+                        "INTERMART" to ("Intermart" to IntermartColor),
+                        "WAY" to ("Way Supermarket" to Color(0xFF0D9488))
+                    )
+
+                    items(supermarketOptions) { (catKey, pair) ->
+                        val (label, brandColor) = pair
+                        val isSelected = activeCatalog.equals(catKey, ignoreCase = true)
+
+                        Surface(
+                            onClick = { viewModel.setActiveCatalog(catKey) },
+                            shape = RoundedCornerShape(16.dp),
+                            color = if (isSelected) brandColor else brandColor.copy(alpha = 0.1f),
+                            border = BorderStroke(1.dp, if (isSelected) brandColor else brandColor.copy(alpha = 0.35f)),
+                            modifier = Modifier.testTag("filter_brand_$catKey")
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                if (isSelected) {
+                                    Icon(
+                                        imageVector = Icons.Default.Check,
+                                        contentDescription = null,
+                                        tint = Color.White,
+                                        modifier = Modifier.size(13.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                }
+                                Text(
+                                    text = label,
+                                    fontSize = 12.sp,
+                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                    color = if (isSelected) Color.White else brandColor
+                                )
+                            }
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                // Sorting & Quick Action Filter Chips Row
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    // Sort Dropdown Box
+                    Box {
+                        Surface(
+                            onClick = { showSortDropdown = true },
+                            shape = RoundedCornerShape(14.dp),
+                            color = if (productSortOption != ProductSortOption.DEFAULT) BluePrimary.copy(alpha = 0.12f) else MaterialTheme.colorScheme.surface,
+                            border = BorderStroke(1.dp, if (productSortOption != ProductSortOption.DEFAULT) BluePrimary else MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)),
+                            modifier = Modifier.testTag("sort_dropdown_button")
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Sort,
+                                    contentDescription = "Trier",
+                                    tint = if (productSortOption != ProductSortOption.DEFAULT) BluePrimary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = when (productSortOption) {
+                                        ProductSortOption.PRICE_ASC -> "Prix: Moins cher"
+                                        ProductSortOption.PRICE_DESC -> "Prix: Plus cher"
+                                        ProductSortOption.PROMOTIONS -> "🔥 Promotions"
+                                        ProductSortOption.NAME_ASC -> "Nom A-Z"
+                                        ProductSortOption.NAME_DESC -> "Nom Z-A"
+                                        ProductSortOption.DEFAULT -> "Trier par"
+                                    },
+                                    fontSize = 12.sp,
+                                    fontWeight = if (productSortOption != ProductSortOption.DEFAULT) FontWeight.Bold else FontWeight.Medium,
+                                    color = if (productSortOption != ProductSortOption.DEFAULT) BluePrimary else MaterialTheme.colorScheme.onSurface
+                                )
+                                Icon(
+                                    imageVector = Icons.Default.ArrowDropDown,
+                                    contentDescription = null,
+                                    tint = if (productSortOption != ProductSortOption.DEFAULT) BluePrimary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
+                        }
+
+                        DropdownMenu(
+                            expanded = showSortDropdown,
+                            onDismissRequest = { showSortDropdown = false }
+                        ) {
+                            ProductSortOption.values().forEach { option ->
+                                DropdownMenuItem(
+                                    text = {
+                                        Text(
+                                            text = option.displayName,
+                                            fontWeight = if (option == productSortOption) FontWeight.Bold else FontWeight.Normal,
+                                            color = if (option == productSortOption) BluePrimary else MaterialTheme.colorScheme.onSurface
+                                        )
+                                    },
+                                    leadingIcon = {
+                                        if (option == productSortOption) {
+                                            Icon(Icons.Default.Check, contentDescription = null, tint = BluePrimary)
+                                        }
+                                    },
+                                    onClick = {
+                                        viewModel.setProductSortOption(option)
+                                        showSortDropdown = false
+                                    }
+                                )
+                            }
+                        }
+                    }
+
+                    // Promotion Only Filter Chip
+                    Surface(
+                        onClick = { viewModel.setOnlyPromotionsFilter(!onlyPromotionsFilter) },
+                        shape = RoundedCornerShape(14.dp),
+                        color = if (onlyPromotionsFilter) Color(0xFFEA580C) else Color(0xFFEA580C).copy(alpha = 0.1f),
+                        border = BorderStroke(1.dp, if (onlyPromotionsFilter) Color(0xFFEA580C) else Color(0xFFEA580C).copy(alpha = 0.35f)),
+                        modifier = Modifier.testTag("filter_promotions_button")
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Whatshot,
+                                contentDescription = null,
+                                tint = if (onlyPromotionsFilter) Color.White else Color(0xFFEA580C),
+                                modifier = Modifier.size(15.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                text = "Rabais & Promos",
+                                fontSize = 12.sp,
+                                fontWeight = if (onlyPromotionsFilter) FontWeight.Bold else FontWeight.Medium,
+                                color = if (onlyPromotionsFilter) Color.White else Color(0xFFEA580C)
+                            )
+                        }
+                    }
+
+                    // Smart Shopping List Shortcut Chip (with lowest price optimizer)
+                    Surface(
+                        onClick = { showSmartShoppingListModal = true },
+                        shape = RoundedCornerShape(14.dp),
+                        color = EmeraldSuccess.copy(alpha = 0.12f),
+                        border = BorderStroke(1.dp, EmeraldSuccess.copy(alpha = 0.4f)),
+                        modifier = Modifier.testTag("smart_list_chip")
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.AutoAwesome,
+                                contentDescription = null,
+                                tint = EmeraldSuccess,
+                                modifier = Modifier.size(15.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                text = "Liste Intelligente",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = EmeraldSuccess
+                            )
                         }
                     }
                 }
@@ -519,6 +908,43 @@ fun ProductsScreen(viewModel: CatalogViewModel) {
                 viewModel = viewModel,
                 onDismiss = { showWishlistModal = false }
             )
+        }
+
+        // Price Drop Alerts Dialog (Firestore + Room)
+        if (showPriceAlertsModal) {
+            PriceAlertsDialog(
+                viewModel = viewModel,
+                onDismiss = { showPriceAlertsModal = false },
+                onNavigateToProduct = { productId ->
+                    // Optionally scroll to or highlight product
+                }
+            )
+        }
+
+        // Smart Shopping List Modal Dialog (Best Store Prices & Optimization)
+        if (showSmartShoppingListModal) {
+            SmartShoppingListDialog(
+                viewModel = viewModel,
+                onDismiss = { showSmartShoppingListModal = false }
+            )
+        }
+
+        // Sync Dashboard Screen Modal Dialog (WorkManager Status & Trigger)
+        if (showSyncDashboardModal) {
+            Dialog(
+                onDismissRequest = { showSyncDashboardModal = false },
+                properties = DialogProperties(usePlatformDefaultWidth = false)
+            ) {
+                Surface(
+                    modifier = Modifier.fillMaxSize(),
+                    color = MaterialTheme.colorScheme.background
+                ) {
+                    SyncDashboardScreen(
+                        viewModel = viewModel,
+                        onBack = { showSyncDashboardModal = false }
+                    )
+                }
+            }
         }
     }
 }

@@ -67,7 +67,16 @@ class CatalogDownloadService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        val action = intent?.action ?: return START_NOT_STICKY
+        val action = intent?.action
+        if (action == null) {
+            try {
+                startForegroundWithNotification("Service de synchronisation")
+            } catch (e: Exception) {
+                Log.w(TAG, "startForeground error", e)
+            }
+            stopSelf()
+            return START_NOT_STICKY
+        }
 
         when (action) {
             ACTION_DOWNLOAD_ALL -> {
@@ -151,7 +160,7 @@ class CatalogDownloadService : Service() {
         )
 
         return NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("Catalog Manager — Importation en arrière-plan")
+            .setContentTitle("QuicKart — Importation en arrière-plan")
             .setContentText(contentText)
             .setSmallIcon(android.R.drawable.stat_sys_download)
             .setOngoing(true)

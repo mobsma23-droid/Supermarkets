@@ -19,6 +19,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountCircle
+import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.CloudSync
 import androidx.compose.material.icons.filled.CloudUpload
 import androidx.compose.material.icons.filled.CompareArrows
 import androidx.compose.material.icons.filled.Favorite
@@ -57,6 +59,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.example.ui.components.LiquidNavigationBar
+import com.example.ui.components.SmartShoppingListDialog
 import com.example.ui.components.WishlistDialog
 import com.example.ui.screens.CartScreen
 import com.example.ui.screens.CompareScreen
@@ -68,7 +71,9 @@ import com.example.ui.screens.ProductsScreen
 import com.example.ui.screens.ProductCatalogScreen
 import com.example.ui.screens.ProfitsScreen
 import com.example.ui.screens.SettingsScreen
+import com.example.ui.screens.SyncDashboardScreen
 import com.example.ui.screens.GoogleBlue
+import com.example.util.CatalogSyncManager
 import com.example.util.AppLanguage
 import com.example.util.AppStrings
 import kotlinx.coroutines.launch
@@ -114,10 +119,13 @@ fun CatalogManagerNavHost(viewModel: CatalogViewModel) {
 
     val wishlistItems by viewModel.wishlistItems.collectAsState()
     val wishlistCount = wishlistItems.size
+    val syncState by CatalogSyncManager.syncState.collectAsState()
 
-    var showAccountLoginModal by remember { mutableStateOf(true) }
+    var showAccountLoginModal by remember { mutableStateOf(false) }
     var showStyleModal by remember { mutableStateOf(false) }
     var showWishlistModal by remember { mutableStateOf(false) }
+    var showSmartShoppingListModal by remember { mutableStateOf(false) }
+    var showSyncDashboardModal by remember { mutableStateOf(false) }
     var showSettingsModal by remember { mutableStateOf(false) }
 
     // Bottom Navigation Screens
@@ -162,7 +170,7 @@ fun CatalogManagerNavHost(viewModel: CatalogViewModel) {
                         }
                         Spacer(modifier = Modifier.width(10.dp))
                         Text(
-                            text = "Catalog Manager",
+                            text = "QuicKart",
                             fontSize = 18.sp,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onSurface
@@ -170,6 +178,69 @@ fun CatalogManagerNavHost(viewModel: CatalogViewModel) {
                     }
                 },
                 actions = {
+                    // Smart Shopping List & Optimizer Button (Lowest Price Engine)
+                    IconButton(
+                        onClick = { showSmartShoppingListModal = true },
+                        modifier = Modifier
+                            .padding(end = 2.dp)
+                            .size(38.dp)
+                            .testTag("smart_shopping_list_button")
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                imageVector = Icons.Default.AutoAwesome,
+                                contentDescription = "Liste de Courses Intelligente (Meilleur Prix)",
+                                tint = if (wishlistCount > 0) Color(0xFF059669) else MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(22.dp)
+                            )
+                            if (wishlistCount > 0) {
+                                Surface(
+                                    shape = CircleShape,
+                                    color = Color(0xFF059669),
+                                    modifier = Modifier
+                                        .size(15.dp)
+                                        .align(Alignment.TopEnd)
+                                ) {
+                                    Box(contentAlignment = Alignment.Center) {
+                                        Text(
+                                            text = "$wishlistCount",
+                                            color = Color.White,
+                                            fontSize = 9.sp,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // Background Sync Dashboard Button (WorkManager Live Status)
+                    IconButton(
+                        onClick = { showSyncDashboardModal = true },
+                        modifier = Modifier
+                            .padding(end = 2.dp)
+                            .size(38.dp)
+                            .testTag("sync_dashboard_button")
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                imageVector = Icons.Default.CloudSync,
+                                contentDescription = "Tableau de Synchronisation",
+                                tint = if (syncState.isRunning) Color(0xFF2563EB) else MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(22.dp)
+                            )
+                            if (syncState.isRunning) {
+                                Surface(
+                                    shape = CircleShape,
+                                    color = Color(0xFF2563EB),
+                                    modifier = Modifier
+                                        .size(8.dp)
+                                        .align(Alignment.TopEnd)
+                                ) {}
+                            }
+                        }
+                    }
+
                     // Wishlist / Favoris Action Button with Badge
                     IconButton(
                         onClick = { showWishlistModal = true },
@@ -322,7 +393,7 @@ fun CatalogManagerNavHost(viewModel: CatalogViewModel) {
                 .padding(innerPadding)
         ) { page ->
             when (bottomNavScreens.getOrNull(page)) {
-                Screen.Products -> ProductCatalogScreen(viewModel = viewModel)
+                Screen.Products -> ProductsScreen(viewModel = viewModel)
                 Screen.Compare -> CompareScreen(
                     viewModel = viewModel,
                     onNavigateToProducts = {
@@ -355,6 +426,32 @@ fun CatalogManagerNavHost(viewModel: CatalogViewModel) {
                 viewModel = viewModel,
                 onDismiss = { showWishlistModal = false }
             )
+        }
+
+        // Smart Shopping List Modal Dialog (Lowest Available Store Price Engine)
+        if (showSmartShoppingListModal) {
+            SmartShoppingListDialog(
+                viewModel = viewModel,
+                onDismiss = { showSmartShoppingListModal = false }
+            )
+        }
+
+        // Sync Dashboard Modal Dialog (WorkManager Status & Manual Sync)
+        if (showSyncDashboardModal) {
+            Dialog(
+                onDismissRequest = { showSyncDashboardModal = false },
+                properties = DialogProperties(usePlatformDefaultWidth = false)
+            ) {
+                Surface(
+                    modifier = Modifier.fillMaxSize(),
+                    color = MaterialTheme.colorScheme.background
+                ) {
+                    SyncDashboardScreen(
+                        viewModel = viewModel,
+                        onBack = { showSyncDashboardModal = false }
+                    )
+                }
+            }
         }
 
         // Dedicated Settings Screen Modal Dialog

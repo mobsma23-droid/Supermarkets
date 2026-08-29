@@ -52,6 +52,24 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material.icons.filled.NotificationsActive
+import androidx.compose.material.icons.filled.NotificationsNone
+import androidx.compose.material.icons.filled.TrendingDown
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.CloudDone
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.input.KeyboardType
+import android.widget.Toast
+import com.example.data.PriceAlertEntity
 import com.example.data.ProductEntity
 import com.example.ui.CatalogViewModel
 import com.example.ui.theme.BluePrimary
@@ -73,6 +91,8 @@ fun ProductDetailsDialog(
     onAddToCart: () -> Unit
 ) {
     val priceHistory by viewModel.getPriceHistoryForProduct(product).collectAsState(initial = emptyList())
+    val existingAlert by viewModel.getPriceAlertForProduct(product.id, product.catalogType).collectAsState(initial = null)
+    val context = LocalContext.current
 
     val sameNameProducts = allProducts.filter {
         it.name.trim().equals(product.name.trim(), ignoreCase = true)
@@ -282,6 +302,28 @@ fun ProductDetailsDialog(
                         PriceTrendChart(
                             history = priceHistory,
                             modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+
+                    // Price Alert Tracking Card (Cloud Firestore + Room Database)
+                    item {
+                        PriceAlertProductSection(
+                            product = product,
+                            alert = existingAlert,
+                            onSetAlert = { targetPrice ->
+                                viewModel.setPriceAlert(product, targetPrice)
+                                Toast.makeText(
+                                    context,
+                                    "Alerte activée pour ${product.name} (Seuil : Rs ${String.format("%.2f", targetPrice)})",
+                                    Toast.LENGTH_SHORT
+                                ).show()
+                            },
+                            onRemoveAlert = {
+                                if (existingAlert != null) {
+                                    viewModel.removePriceAlert(existingAlert!!)
+                                    Toast.makeText(context, "Alerte de prix désactivée", Toast.LENGTH_SHORT).show()
+                                }
+                            }
                         )
                     }
 
@@ -502,3 +544,259 @@ fun ProductDetailsDialog(
         }
     }
 }
+
+@Composable
+fun PriceAlertProductSection(
+    product: ProductEntity,
+    alert: PriceAlertEntity?,
+    onSetAlert: (Double) -> Unit,
+    onRemoveAlert: () -> Unit
+) {
+    val isAlertActive = alert != null
+    var isEditingThreshold by remember { mutableStateOf(false) }
+    var inputThreshold by remember(product.price, alert?.targetPrice) {
+        mutableStateOf(
+            if (alert != null) String.format("%.2f", alert.targetPrice)
+            else String.format("%.2f", (product.price * 0.90).coerceAtLeast(1.0))
+        )
+    }
+
+    val isTriggered = alert?.let { it.isTriggered || (it.currentPrice > 0 && it.currentPrice <= it.targetPrice) } ?: false
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = if (isTriggered) EmeraldSuccess.copy(alpha = 0.08f)
+            else if (isAlertActive) Color(0xFFEA580C).copy(alpha = 0.05f)
+            else MaterialTheme.colorScheme.surface
+        ),
+        border = BorderStroke(
+            1.dp,
+            if (isTriggered) EmeraldSuccess.copy(alpha = 0.6f)
+            else if (isAlertActive) Color(0xFFEA580C).copy(alpha = 0.4f)
+            else MaterialTheme.colorScheme.outline.copy(alpha = 0.15f)
+        )
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            // Section Title & Status
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Surface(
+                        shape = CircleShape,
+                        color = if (isAlertActive) Color(0xFFEA580C).copy(alpha = 0.15f) else MaterialTheme.colorScheme.surfaceVariant,
+                        modifier = Modifier.size(32.dp)
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                imageVector = if (isAlertActive) Icons.Default.NotificationsActive else Icons.Default.NotificationsNone,
+                                contentDescription = null,
+                                tint = if (isAlertActive) Color(0xFFEA580C) else MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                    }
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Column {
+                        Text(
+                            text = "Alerte Baisse de Prix",
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Text(
+                            text = if (isAlertActive) "Surveillance active (Cloud Firestore)" else "Soyez notifié dès que le prix baisse",
+                            fontSize = 11.sp,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                        )
+                    }
+                }
+
+                if (isAlertActive) {
+                    Surface(
+                        shape = RoundedCornerShape(8.dp),
+                        color = if (isTriggered) EmeraldSuccess else Color(0xFFEA580C).copy(alpha = 0.15f)
+                    ) {
+                        Text(
+                            text = if (isTriggered) "🎉 Baisse atteinte !" else "Actif",
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = if (isTriggered) Color.White else Color(0xFFEA580C),
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                        )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            if (!isAlertActive && !isEditingThreshold) {
+                // Not active state: Quick enable prompt
+                Text(
+                    text = "Définissez un prix cible. Lorsque ${product.catalogType} baisse le prix sous votre seuil, l'application vous envoie une notification push instantanée !",
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                    lineHeight = 16.sp
+                )
+                Spacer(modifier = Modifier.height(10.dp))
+                Button(
+                    onClick = { isEditingThreshold = true },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(10.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFEA580C))
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.NotificationsActive,
+                        contentDescription = null,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = "Activer une alerte pour ce produit",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            } else {
+                // Active or Configuration State
+                if (isAlertActive && !isEditingThreshold) {
+                    // Summary of configured alert
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column {
+                            Text(
+                                text = "Seuil configuré :",
+                                fontSize = 11.sp,
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                            )
+                            Text(
+                                text = "<= Rs ${String.format("%.2f", alert!!.targetPrice)}",
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.Black,
+                                color = Color(0xFFEA580C)
+                            )
+                        }
+
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            OutlinedButton(
+                                onClick = { isEditingThreshold = true },
+                                shape = RoundedCornerShape(8.dp),
+                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
+                            ) {
+                                Text("Ajuster", fontSize = 11.sp)
+                            }
+                            OutlinedButton(
+                                onClick = onRemoveAlert,
+                                shape = RoundedCornerShape(8.dp),
+                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                                colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error)
+                            ) {
+                                Text("Supprimer", fontSize = 11.sp)
+                            }
+                        }
+                    }
+                } else {
+                    // Interactive threshold editor
+                    Column {
+                        Text(
+                            text = "Prix actuel : Rs ${String.format("%.2f", product.price)}. Entrez votre seuil d'alerte :",
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f)
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        OutlinedTextField(
+                            value = inputThreshold,
+                            onValueChange = { inputThreshold = it },
+                            label = { Text("Seuil d'alerte (Rs)") },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(10.dp),
+                            singleLine = true
+                        )
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        // Percentage shortcut chips
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            listOf(5, 10, 15, 20).forEach { pct ->
+                                val priceAtDiscount = product.price * (1.0 - pct / 100.0)
+                                Surface(
+                                    shape = RoundedCornerShape(8.dp),
+                                    color = Color(0xFFEA580C).copy(alpha = 0.1f),
+                                    border = BorderStroke(1.dp, Color(0xFFEA580C).copy(alpha = 0.3f)),
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .clickable {
+                                            inputThreshold = String.format("%.2f", priceAtDiscount)
+                                        }
+                                ) {
+                                    Text(
+                                        text = "-$pct%\nRs ${String.format("%.0f", priceAtDiscount)}",
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color(0xFFEA580C),
+                                        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                                        modifier = Modifier.padding(vertical = 4.dp)
+                                    )
+                                }
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        val parsedVal = inputThreshold.replace(",", ".").toDoubleOrNull()
+                        val isValid = parsedVal != null && parsedVal > 0.0
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            if (isAlertActive) {
+                                OutlinedButton(
+                                    onClick = { isEditingThreshold = false },
+                                    shape = RoundedCornerShape(10.dp),
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    Text("Annuler", fontSize = 12.sp)
+                                }
+                            }
+
+                            Button(
+                                onClick = {
+                                    if (isValid) {
+                                        onSetAlert(parsedVal!!)
+                                        isEditingThreshold = false
+                                    }
+                                },
+                                enabled = isValid,
+                                shape = RoundedCornerShape(10.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFEA580C)),
+                                modifier = Modifier.weight(1.5f)
+                            ) {
+                                Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(
+                                    text = if (isAlertActive) "Mettre à jour" else "Enregistrer l'alerte",
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+

@@ -101,4 +101,41 @@ interface CatalogDao {
 
     @Query("DELETE FROM price_history")
     suspend fun clearPriceHistory()
+
+    // --- Price Alerts (Firestore Sync + Room Local Storage) ---
+    @Query("SELECT * FROM price_alerts ORDER BY createdAt DESC")
+    fun getPriceAlerts(): Flow<List<PriceAlertEntity>>
+
+    @Query("SELECT * FROM price_alerts ORDER BY createdAt DESC")
+    suspend fun getPriceAlertList(): List<PriceAlertEntity>
+
+    @Query("SELECT * FROM price_alerts WHERE productId = :productId AND catalogType = :catalogType LIMIT 1")
+    fun getPriceAlertForProduct(productId: Int, catalogType: String): Flow<PriceAlertEntity?>
+
+    @Query("SELECT * FROM price_alerts WHERE productId = :productId AND catalogType = :catalogType LIMIT 1")
+    suspend fun getPriceAlertForProductSync(productId: Int, catalogType: String): PriceAlertEntity?
+
+    @Query("SELECT * FROM price_alerts WHERE LOWER(TRIM(productName)) = LOWER(TRIM(:productName))")
+    suspend fun getPriceAlertsByProductName(productName: String): List<PriceAlertEntity>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertPriceAlert(alert: PriceAlertEntity): Long
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertPriceAlerts(alerts: List<PriceAlertEntity>)
+
+    @Update
+    suspend fun updatePriceAlert(alert: PriceAlertEntity)
+
+    @Query("DELETE FROM price_alerts WHERE id = :id")
+    suspend fun deletePriceAlert(id: Int)
+
+    @Query("DELETE FROM price_alerts WHERE firestoreId = :firestoreId")
+    suspend fun deletePriceAlertByFirestoreId(firestoreId: String)
+
+    @Query("DELETE FROM price_alerts WHERE productId = :productId AND catalogType = :catalogType")
+    suspend fun deletePriceAlertByProduct(productId: Int, catalogType: String)
+
+    @Query("DELETE FROM price_alerts")
+    suspend fun clearPriceAlerts()
 }

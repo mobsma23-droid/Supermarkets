@@ -24,7 +24,29 @@ import com.example.ui.theme.CatalogManagerTheme
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        FirebaseApp.initializeApp(applicationContext)
+        try {
+            if (FirebaseApp.getApps(applicationContext).isEmpty()) {
+                val initialized = try {
+                    FirebaseApp.initializeApp(applicationContext)
+                } catch (e: Exception) {
+                    null
+                }
+                if (initialized == null) {
+                    try {
+                        val options = com.google.firebase.FirebaseOptions.Builder()
+                            .setApplicationId("1:14577422115:android:shoppingcartcatalog")
+                            .setProjectId("shopping-cart-80d07")
+                            .setApiKey("AIzaSyDummyKeyForLocalFallbackCatalogApp")
+                            .build()
+                        FirebaseApp.initializeApp(applicationContext, options)
+                    } catch (e: Throwable) {
+                        android.util.Log.w("MainActivity", "Firebase options init fallback: ${e.message}")
+                    }
+                }
+            }
+        } catch (e: Throwable) {
+            android.util.Log.w("MainActivity", "FirebaseApp init skipped or failed: ${e.message}")
+        }
         enableEdgeToEdge()
 
         val database = AppDatabase.getDatabase(applicationContext, lifecycleScope)
@@ -33,13 +55,21 @@ class MainActivity : ComponentActivity() {
         val viewModel = ViewModelProvider(this, factory)[CatalogViewModel::class.java]
 
         // Initialize background catalog sync via WorkManager according to user preferences
-        com.example.util.CatalogSyncManager.init(applicationContext)
+        try {
+            com.example.util.CatalogSyncManager.init(applicationContext)
+        } catch (e: Throwable) {
+            android.util.Log.w("MainActivity", "CatalogSyncManager init skipped: ${e.message}")
+        }
 
         // Request notification permission on Android 13+ (API 33+)
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
-            if (checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
-                requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), 101)
+        try {
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+                if (checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                    requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), 101)
+                }
             }
+        } catch (e: Throwable) {
+            android.util.Log.w("MainActivity", "Notification permission check error: ${e.message}")
         }
 
         setContent {

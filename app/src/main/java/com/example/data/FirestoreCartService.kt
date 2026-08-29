@@ -8,13 +8,23 @@ import java.util.Date
 
 object FirestoreCartService {
     private const val TAG = "FirestoreCartService"
-    private val db: FirebaseFirestore by lazy {
-        val firestore = FirebaseFirestore.getInstance()
-        val settings = com.google.firebase.firestore.FirebaseFirestoreSettings.Builder()
-            .setPersistenceEnabled(true)
-            .build()
-        firestore.firestoreSettings = settings
-        firestore
+
+    private fun getDb(): FirebaseFirestore? {
+        return try {
+            val firestore = FirebaseFirestore.getInstance()
+            try {
+                val settings = com.google.firebase.firestore.FirebaseFirestoreSettings.Builder()
+                    .setPersistenceEnabled(true)
+                    .build()
+                firestore.firestoreSettings = settings
+            } catch (ignored: Exception) {
+                // Settings can only be set once before any other operations
+            }
+            firestore
+        } catch (e: Exception) {
+            Log.w(TAG, "Firestore is unavailable: ${e.message}")
+            null
+        }
     }
 
     /**
@@ -22,6 +32,7 @@ object FirestoreCartService {
      */
     suspend fun syncCartToFirestore(userKey: String, items: List<CartItemEntity>): Boolean {
         return try {
+            val db = getDb() ?: return false
             val sanitizedUser = if (userKey.isBlank()) "guest_user" else userKey.replace(".", "_").replace("@", "_")
             val cartDocRef = db.collection("carts").document(sanitizedUser)
 
@@ -57,6 +68,7 @@ object FirestoreCartService {
 
     suspend fun syncProductsToFirestore(products: List<com.example.data.ProductEntity>): Boolean {
         return try {
+            val db = getDb() ?: return false
             val batch = db.batch()
             products.forEach { product ->
                 val docRef = db.collection("products").document(product.id.toString())
@@ -91,6 +103,7 @@ object FirestoreCartService {
         totalProfit: Double
     ): String? {
         return try {
+            val db = getDb() ?: return null
             val sanitizedUser = if (userKey.isBlank()) "guest_user" else userKey
             val orderRef = db.collection("orders").document()
 
@@ -130,3 +143,4 @@ object FirestoreCartService {
         }
     }
 }
+

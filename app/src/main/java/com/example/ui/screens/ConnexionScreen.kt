@@ -185,7 +185,7 @@ fun ConnexionScreen(
                     }
                     Spacer(modifier = Modifier.width(10.dp))
                     Text(
-                        text = "Compte & Connexion",
+                        text = "QuicKart • Connexion",
                         fontSize = 16.sp,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onSurface
@@ -236,22 +236,25 @@ fun ConnexionScreen(
                 if (isSignedIn && !savedEmail.isNullOrBlank()) {
                     // Google Signed-In Account View
                     Text(
-                        text = "Bienvenue",
-                        fontSize = 24.sp,
-                        fontWeight = FontWeight.Normal,
-                        color = MaterialTheme.colorScheme.onSurface
+                        text = "Welcome to QuicKart\nYour Supermarket Items and Price Comparison",
+                        fontSize = 20.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        textAlign = TextAlign.Center,
+                        lineHeight = 26.sp
                     )
 
-                    Spacer(modifier = Modifier.height(6.dp))
+                    Spacer(modifier = Modifier.height(8.dp))
 
                     Text(
-                        text = "Accès sécurisé via Firebase Auth & Google",
+                        text = "Compare catalog prices, track promotions, and save on your groceries.",
                         fontSize = 13.sp,
                         color = SlateTextSecondary,
-                        textAlign = TextAlign.Center
+                        textAlign = TextAlign.Center,
+                        lineHeight = 18.sp
                     )
 
-                    Spacer(modifier = Modifier.height(24.dp))
+                    Spacer(modifier = Modifier.height(20.dp))
 
                     // Account Chip
                     Surface(
@@ -413,19 +416,22 @@ fun ConnexionScreen(
                 } else {
                     // Google Sign In Form
                     Text(
-                        text = "Connexion",
-                        fontSize = 24.sp,
-                        fontWeight = FontWeight.Normal,
-                        color = MaterialTheme.colorScheme.onSurface
+                        text = "Welcome to QuicKart\nYour Supermarket Items and Price Comparison",
+                        fontSize = 20.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        textAlign = TextAlign.Center,
+                        lineHeight = 26.sp
                     )
 
-                    Spacer(modifier = Modifier.height(6.dp))
+                    Spacer(modifier = Modifier.height(8.dp))
 
                     Text(
-                        text = "Accéder à Catalog Manager avec Google",
-                        fontSize = 14.sp,
+                        text = "Compare catalog prices, track promotions, and save on your groceries.",
+                        fontSize = 13.sp,
                         color = SlateTextSecondary,
-                        textAlign = TextAlign.Center
+                        textAlign = TextAlign.Center,
+                        lineHeight = 18.sp
                     )
 
                     Spacer(modifier = Modifier.height(20.dp))

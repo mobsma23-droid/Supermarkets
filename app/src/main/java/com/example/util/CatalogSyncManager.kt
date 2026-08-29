@@ -89,26 +89,34 @@ object CatalogSyncManager {
      * Schedules periodic background sync using WorkManager (every 6 hours when connected to network)
      */
     fun schedulePeriodicSync(context: Context) {
-        val constraints = Constraints.Builder()
-            .setRequiredNetworkType(NetworkType.CONNECTED)
-            .build()
+        try {
+            val constraints = Constraints.Builder()
+                .setRequiredNetworkType(NetworkType.CONNECTED)
+                .build()
 
-        val syncRequest = PeriodicWorkRequestBuilder<CatalogSyncWorker>(6, TimeUnit.HOURS)
-            .setConstraints(constraints)
-            .build()
+            val syncRequest = PeriodicWorkRequestBuilder<CatalogSyncWorker>(6, TimeUnit.HOURS)
+                .setConstraints(constraints)
+                .build()
 
-        WorkManager.getInstance(context.applicationContext).enqueueUniquePeriodicWork(
-            PERIODIC_WORK_TAG,
-            ExistingPeriodicWorkPolicy.KEEP,
-            syncRequest
-        )
+            WorkManager.getInstance(context.applicationContext).enqueueUniquePeriodicWork(
+                PERIODIC_WORK_TAG,
+                ExistingPeriodicWorkPolicy.KEEP,
+                syncRequest
+            )
+        } catch (e: Throwable) {
+            android.util.Log.w("CatalogSyncManager", "WorkManager schedule failed: ${e.message}")
+        }
     }
 
     /**
      * Cancels the periodic background sync WorkManager job
      */
     fun cancelPeriodicSync(context: Context) {
-        WorkManager.getInstance(context.applicationContext).cancelUniqueWork(PERIODIC_WORK_TAG)
+        try {
+            WorkManager.getInstance(context.applicationContext).cancelUniqueWork(PERIODIC_WORK_TAG)
+        } catch (e: Throwable) {
+            android.util.Log.w("CatalogSyncManager", "WorkManager cancel failed: ${e.message}")
+        }
     }
 
     /**

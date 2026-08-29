@@ -20,4 +20,6 @@ val BadgeBg = Color(0xFFF1F5F9)
 
 val DreampriceColor = Color(0xFFDC2626) // Vibrant Crimson
 val IntermartColor = Color(0xFF16A34A) // Forest Emerald
+val SuperUColor = Color(0xFF0284C7) // Super U Azure Blue
+val WinnersColor = Color(0xFFD97706) // Winners Amber Gold
 

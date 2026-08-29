@@ -8,6 +8,8 @@ import androidx.lifecycle.viewModelScope
 import com.example.data.CartItemEntity
 import com.example.data.CatalogRepository
 import com.example.data.FirestoreCartService
+import com.example.data.PriceAlertEntity
+import com.example.data.FirestorePriceAlertService
 import com.example.data.PriceHistoryEntity
 import com.example.data.ProductEntity
 import com.example.data.SaleRecordEntity
@@ -19,6 +21,7 @@ import com.example.util.ChatMessage
 import com.example.util.GeminiService
 import com.example.util.ImportValidationReport
 import com.example.util.OnlineProductInfo
+import com.example.util.PriceAlertNotificationHelper
 import com.example.util.SemanticSearchResult
 import com.example.util.SpreadsheetImporter
 import com.google.firebase.auth.FirebaseAuth
@@ -81,6 +84,15 @@ enum class FontScaleOption(val displayName: String, val multiplier: Float) {
     NORMAL("Normale (100%)", 1.0f),
     LARGE("Agrandie (115%)", 1.15f),
     SMALL("Compacte (90%)", 0.90f)
+}
+
+enum class ProductSortOption(val displayName: String) {
+    DEFAULT("Pertinence / Standard"),
+    PRICE_ASC("Prix croissant (Moins cher)"),
+    PRICE_DESC("Prix décroissant (Plus cher)"),
+    PROMOTIONS("Dernières Promotions & Rabais"),
+    NAME_ASC("Nom (A - Z)"),
+    NAME_DESC("Nom (Z - A)")
 }
 
 class CatalogViewModel(
@@ -174,6 +186,8 @@ class CatalogViewModel(
 
     // Auto-sync Firestore toggle state (Local Room persistence vs Cloud Sync)
     val isFirestoreAutoSyncEnabled = MutableStateFlow(true)
+    val firestoreSyncStatus = MutableStateFlow("Connecté à Firestore (shopping-cart-80d07)")
+    val isFirestoreSyncing = MutableStateFlow(false)
 
     // Periodic WorkManager background sync toggle (every 6h)
     val isPeriodicWorkManagerEnabled: StateFlow<Boolean> = com.example.util.CatalogSyncManager.isPeriodicSyncEnabled
@@ -182,10 +196,6 @@ class CatalogViewModel(
     val autoAddToCartOnScan = MutableStateFlow(false)
     val continuousScanMode = MutableStateFlow(false)
     val vibrateOnScan = MutableStateFlow(true)
-
-    init {
-        loadSavedCredentials()
-    }
 
     fun initAuthStorage(ctx: Context) {
         if (authPrefs == null) {
@@ -275,6 +285,44 @@ class CatalogViewModel(
                 }
             }
         }
+
+        // Initialize Notification Channel for Price Drop Alerts
+        try {
+            context?.let { ctx ->
+                PriceAlertNotificationHelper.createNotificationChannel(ctx)
+            }
+        } catch (e: Throwable) {
+            android.util.Log.w("CatalogViewModel", "Notification channel creation skipped: ${e.message}")
+        }
+
+        // Synchronize price alerts with Firestore and attach realtime snapshot listener
+        viewModelScope.launch {
+            try {
+                val userKey = googleAccountEmail.value ?: "guest_user"
+                repository.syncAlertsWithFirestore(userKey)
+                setupPriceAlertsFirestoreListener(userKey)
+            } catch (e: Throwable) {
+                android.util.Log.w("CatalogViewModel", "Price alerts sync skipped: ${e.message}")
+            }
+        }
+
+        // Continuously evaluate price alerts against catalog products and trigger alerts
+        viewModelScope.launch {
+            try {
+                allProducts.collect { products ->
+                    try {
+                        if (products.isNotEmpty()) {
+                            val userKey = googleAccountEmail.value ?: "guest_user"
+                            repository.checkPriceAlerts(products, context, userKey)
+                        }
+                    } catch (e: Throwable) {
+                        android.util.Log.w("CatalogViewModel", "Price check iteration error: ${e.message}")
+                    }
+                }
+            } catch (e: Throwable) {
+                android.util.Log.w("CatalogViewModel", "allProducts collect error: ${e.message}")
+            }
+        }
     }
 
     fun saveUserCredentials(email: String, password: String, name: String? = null) {
@@ -353,12 +401,26 @@ class CatalogViewModel(
         _activeCatalog.value = catalog.trim().uppercase()
     }
 
-    // Search & Filter
+    // Search, Filter & Sorting State
     private val _searchQuery = MutableStateFlow("")
     val searchQuery: StateFlow<String> = _searchQuery
 
     private val _selectedCategory = MutableStateFlow("Tous")
     val selectedCategory: StateFlow<String> = _selectedCategory
+
+    private val _productSortOption = MutableStateFlow(ProductSortOption.DEFAULT)
+    val productSortOption: StateFlow<ProductSortOption> = _productSortOption
+
+    private val _onlyPromotionsFilter = MutableStateFlow(false)
+    val onlyPromotionsFilter: StateFlow<Boolean> = _onlyPromotionsFilter
+
+    fun setProductSortOption(option: ProductSortOption) {
+        _productSortOption.value = option
+    }
+
+    fun setOnlyPromotionsFilter(enabled: Boolean) {
+        _onlyPromotionsFilter.value = enabled
+    }
 
     // Gemini Natural Language Semantic Search State
     private val _semanticSearchResult = MutableStateFlow<SemanticSearchResult?>(null)
@@ -398,6 +460,9 @@ class CatalogViewModel(
     fun clearAllSearchFilters() {
         _searchQuery.value = ""
         _selectedCategory.value = "Tous"
+        _activeCatalog.value = "TOUS"
+        _productSortOption.value = ProductSortOption.DEFAULT
+        _onlyPromotionsFilter.value = false
         _semanticSearchResult.value = null
     }
 
@@ -409,9 +474,9 @@ class CatalogViewModel(
     val availableCatalogs: StateFlow<List<String>> = allProducts
         .map { products ->
             val found = products.map { it.catalogType.trim().uppercase() }.filter { it.isNotBlank() }.distinct()
-            val defaults = listOf("TOUS", "DREAMPRICE", "INTERMART")
+            val defaults = listOf("TOUS", "DREAMPRICE", "SUPER_U", "WINNERS", "INTERMART", "WAY")
             (defaults + found).distinct()
-        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), listOf("TOUS", "DREAMPRICE", "INTERMART"))
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), listOf("TOUS", "DREAMPRICE", "SUPER_U", "WINNERS", "INTERMART", "WAY"))
 
     // Filtered Products for Comparison Tab
     val comparedProducts: StateFlow<List<ProductEntity>> = combine(
@@ -421,14 +486,25 @@ class CatalogViewModel(
         products.filter { it.id in ids }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    // Products filtered by active catalog, search, category, and Gemini semantic search
+    // Products filtered by active catalog, search, category, promotions, sorting and Gemini semantic search
     val currentProducts: StateFlow<List<ProductEntity>> = combine(
         allProducts,
         _activeCatalog,
         _searchQuery,
         _selectedCategory,
+        _onlyPromotionsFilter,
+        _productSortOption,
         _semanticSearchResult
-    ) { products, catalog, query, category, semanticResult ->
+    ) { args: Array<Any?> ->
+        @Suppress("UNCHECKED_CAST")
+        val products = args[0] as List<ProductEntity>
+        val catalog = args[1] as String
+        val query = args[2] as String
+        val category = args[3] as String
+        val onlyPromos = args[4] as Boolean
+        val sortOption = args[5] as ProductSortOption
+        val semanticResult = args[6] as SemanticSearchResult?
+
         var list = products
 
         // If Gemini Semantic Search is active, filter / rank by semantic matches
@@ -439,7 +515,7 @@ class CatalogViewModel(
         }
 
         val trimmedQuery = query.trim()
-        list.filter { p ->
+        val filtered = list.filter { p ->
             (catalog == "TOUS" || p.catalogType.equals(catalog, ignoreCase = true)) &&
             (trimmedQuery.isBlank() ||
                 p.name.contains(trimmedQuery, ignoreCase = true) ||
@@ -448,7 +524,21 @@ class CatalogViewModel(
                 p.catalogType.contains(trimmedQuery, ignoreCase = true) ||
                 p.id.toString().contains(trimmedQuery, ignoreCase = true) ||
                 "#${p.id}".contains(trimmedQuery, ignoreCase = true)) &&
-            (category == "Tous" || p.category.equals(category, ignoreCase = true))
+            (category == "Tous" || p.category.equals(category, ignoreCase = true)) &&
+            (!onlyPromos || (p.cost > p.price || p.name.contains("Promo", true) || p.category.contains("Promo", true) || p.name.contains("Offre", true) || p.name.contains("Special", true)))
+        }
+
+        when (sortOption) {
+            ProductSortOption.PRICE_ASC -> filtered.sortedBy { it.price }
+            ProductSortOption.PRICE_DESC -> filtered.sortedByDescending { it.price }
+            ProductSortOption.PROMOTIONS -> filtered.sortedByDescending { p ->
+                if (p.cost > p.price) (p.cost - p.price) / p.cost
+                else if (p.category.contains("Promo", true) || p.name.contains("Promo", true) || p.name.contains("Offre", true)) 0.5
+                else 0.0
+            }
+            ProductSortOption.NAME_ASC -> filtered.sortedBy { it.name.lowercase() }
+            ProductSortOption.NAME_DESC -> filtered.sortedByDescending { it.name.lowercase() }
+            ProductSortOption.DEFAULT -> filtered
         }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
@@ -469,6 +559,26 @@ class CatalogViewModel(
     val wishlistedProductKeys: StateFlow<Set<String>> = wishlistItems
         .map { items -> items.map { "${it.catalogType.uppercase()}_${it.productId}" }.toSet() }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptySet())
+
+    // Price Alerts (Cloud Firestore + Room Database)
+    val priceAlerts: StateFlow<List<PriceAlertEntity>> = repository.getPriceAlerts()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val triggeredPriceAlerts: StateFlow<List<PriceAlertEntity>> = priceAlerts
+        .map { alerts -> alerts.filter { it.isTriggered } }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val activeAlertsCount: StateFlow<Int> = priceAlerts
+        .map { it.size }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
+
+    val triggeredAlertsCount: StateFlow<Int> = triggeredPriceAlerts
+        .map { it.size }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
+
+    val isAlertsFirestoreSyncing = MutableStateFlow(false)
+    val alertsFirestoreSyncStatus = MutableStateFlow("Synchronisé avec Cloud Firestore")
+    private var priceAlertsListener: com.google.firebase.firestore.ListenerRegistration? = null
 
     // Sales Records
     val saleRecords: StateFlow<List<SaleRecordEntity>> = repository.getSaleRecords()
@@ -557,6 +667,8 @@ class CatalogViewModel(
     val autoBackupStatus = MutableStateFlow("Sauvegarde automatique vers Google Drive active")
 
     init {
+        loadSavedCredentials()
+
         // Automatic periodic Google Drive backup worker loop
         viewModelScope.launch {
             while (true) {
@@ -1043,10 +1155,6 @@ class CatalogViewModel(
         com.example.util.CatalogSyncManager.setPeriodicSyncEnabled(context, enabled)
     }
 
-    // Firestore Manual / Auto Sync Controls
-    val firestoreSyncStatus = MutableStateFlow("Connecté à Firestore (shopping-cart-80d07)")
-    val isFirestoreSyncing = MutableStateFlow(false)
-
     fun setFirestoreAutoSyncEnabled(enabled: Boolean) {
         isFirestoreAutoSyncEnabled.value = enabled
         authPrefs?.edit()?.putBoolean("auto_sync_firestore_enabled", enabled)?.apply()
@@ -1222,6 +1330,145 @@ class CatalogViewModel(
     fun isWishlisted(product: ProductEntity): Boolean {
         val key = "${product.catalogType.uppercase()}_${product.id}"
         return key in wishlistedProductKeys.value || product.id in wishlistedProductIds.value
+    }
+
+    // --- Price Alerts Actions (Firestore + Room) ---
+
+    fun setPriceAlert(product: ProductEntity, targetPrice: Double) {
+        viewModelScope.launch {
+            val userKey = googleAccountEmail.value ?: "guest_user"
+            val existing = repository.getPriceAlertForProductSync(product.id, product.catalogType)
+            val alert = PriceAlertEntity(
+                id = existing?.id ?: 0,
+                firestoreId = existing?.firestoreId ?: "",
+                productId = product.id,
+                catalogType = product.catalogType,
+                productName = product.name,
+                category = product.category,
+                brand = product.brand,
+                unit = product.unit,
+                initialPrice = existing?.initialPrice ?: product.price,
+                targetPrice = targetPrice,
+                currentPrice = product.price,
+                userEmail = userKey
+            )
+            isAlertsFirestoreSyncing.value = true
+            repository.savePriceAlert(alert, userKey, context)
+            isAlertsFirestoreSyncing.value = false
+            alertsFirestoreSyncStatus.value = "Alerte de prix activée pour ${product.name} (Seuil: Rs ${String.format("%.2f", targetPrice)})"
+        }
+    }
+
+    fun removePriceAlert(alert: PriceAlertEntity) {
+        viewModelScope.launch {
+            val userKey = googleAccountEmail.value ?: "guest_user"
+            isAlertsFirestoreSyncing.value = true
+            repository.deletePriceAlert(alert, userKey)
+            isAlertsFirestoreSyncing.value = false
+            alertsFirestoreSyncStatus.value = "Alerte supprimée de Firestore"
+        }
+    }
+
+    fun removePriceAlertByProduct(productId: Int, catalogType: String) {
+        viewModelScope.launch {
+            val userKey = googleAccountEmail.value ?: "guest_user"
+            isAlertsFirestoreSyncing.value = true
+            repository.deletePriceAlertByProduct(productId, catalogType, userKey)
+            isAlertsFirestoreSyncing.value = false
+        }
+    }
+
+    fun getPriceAlertForProduct(productId: Int, catalogType: String): Flow<PriceAlertEntity?> {
+        return repository.getPriceAlertForProduct(productId, catalogType)
+    }
+
+    fun syncPriceAlertsWithFirestore() {
+        viewModelScope.launch {
+            isAlertsFirestoreSyncing.value = true
+            val userKey = googleAccountEmail.value ?: "guest_user"
+            repository.syncAlertsWithFirestore(userKey)
+            isAlertsFirestoreSyncing.value = false
+            alertsFirestoreSyncStatus.value = "Alertes synchronisées avec Firestore (${priceAlerts.value.size} actives)"
+        }
+    }
+
+    fun addAlertProductToCart(alert: PriceAlertEntity) {
+        viewModelScope.launch {
+            val product = ProductEntity(
+                id = alert.productId,
+                catalogType = alert.catalogType,
+                name = alert.productName,
+                category = alert.category,
+                brand = alert.brand,
+                unit = alert.unit,
+                price = alert.currentPrice,
+                cost = 0.0
+            )
+            repository.addToCart(product, 1)
+            triggerFirestoreCartSync()
+        }
+    }
+
+    fun triggerTestPriceDropNotification(product: ProductEntity? = null) {
+        viewModelScope.launch {
+            val sampleProduct = product ?: allProducts.value.firstOrNull() ?: ProductEntity(
+                id = 999,
+                catalogType = "DREAMPRICE",
+                name = "Huile de Tournesol 1L",
+                category = "Épicerie",
+                brand = "Lesieur",
+                unit = "1L",
+                price = 84.50,
+                cost = 68.00
+            )
+
+            val testAlert = PriceAlertEntity(
+                id = 9999,
+                productId = sampleProduct.id,
+                catalogType = sampleProduct.catalogType,
+                productName = sampleProduct.name,
+                category = sampleProduct.category,
+                brand = sampleProduct.brand,
+                unit = sampleProduct.unit,
+                initialPrice = sampleProduct.price + 15.0,
+                targetPrice = sampleProduct.price,
+                currentPrice = sampleProduct.price,
+                isTriggered = true,
+                lastTriggeredPrice = sampleProduct.price,
+                userEmail = googleAccountEmail.value ?: "guest_user"
+            )
+
+            context?.let { ctx ->
+                PriceAlertNotificationHelper.postPriceDropNotification(
+                    context = ctx,
+                    alert = testAlert,
+                    newPrice = sampleProduct.price,
+                    supermarket = sampleProduct.catalogType
+                )
+            }
+        }
+    }
+
+    private fun setupPriceAlertsFirestoreListener(userKey: String) {
+        try {
+            priceAlertsListener?.remove()
+            priceAlertsListener = FirestorePriceAlertService.listenToPriceAlerts(userKey) { remoteAlerts ->
+                viewModelScope.launch {
+                    try {
+                        remoteAlerts.forEach { remote ->
+                            val local = repository.getPriceAlertForProductSync(remote.productId, remote.catalogType)
+                            if (local == null) {
+                                repository.savePriceAlert(remote, userKey)
+                            }
+                        }
+                    } catch (e: Throwable) {
+                        android.util.Log.w("CatalogViewModel", "Remote alert update error: ${e.message}")
+                    }
+                }
+            }
+        } catch (e: Throwable) {
+            android.util.Log.w("CatalogViewModel", "Listener setup error: ${e.message}")
+        }
     }
 
     // Gemini Chatbot Integration

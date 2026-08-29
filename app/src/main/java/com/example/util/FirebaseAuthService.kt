@@ -13,9 +13,17 @@ import com.google.firebase.auth.GoogleAuthProvider
 import kotlinx.coroutines.tasks.await
 
 object FirebaseAuthService {
-    private val auth = FirebaseAuth.getInstance()
+    private fun getAuth(): FirebaseAuth? {
+        return try {
+            FirebaseAuth.getInstance()
+        } catch (e: Exception) {
+            Log.w("FirebaseAuthService", "FirebaseAuth instance unavailable: ${e.message}")
+            null
+        }
+    }
 
     suspend fun signInWithGoogle(context: Context, webClientId: String): Boolean {
+        val auth = getAuth() ?: return false
         val credentialManager = CredentialManager.create(context)
         val googleIdOption = GetGoogleIdOption.Builder()
             .setFilterByAuthorizedAccounts(false)
@@ -28,14 +36,14 @@ object FirebaseAuthService {
 
         return try {
             val result = credentialManager.getCredential(context, request)
-            handleSignInResult(result)
+            handleSignInResult(result, auth)
         } catch (e: Exception) {
             Log.e("FirebaseAuthService", "Sign in failed", e)
             false
         }
     }
 
-    private suspend fun handleSignInResult(result: GetCredentialResponse): Boolean {
+    private suspend fun handleSignInResult(result: GetCredentialResponse, auth: FirebaseAuth): Boolean {
         val credential = result.credential
         if (credential is GoogleIdTokenCredential) {
             val firebaseCredential = GoogleAuthProvider.getCredential(credential.idToken, null)
@@ -50,7 +58,14 @@ object FirebaseAuthService {
         return false
     }
 
-    fun getCurrentUser() = auth.currentUser
+    fun getCurrentUser() = getAuth()?.currentUser
 
-    fun signOut() = auth.signOut()
+    fun signOut() {
+        try {
+            getAuth()?.signOut()
+        } catch (e: Exception) {
+            Log.w("FirebaseAuthService", "Sign out error: ${e.message}")
+        }
+    }
 }
+
